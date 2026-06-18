@@ -1,0 +1,11 @@
+[project]
+name = "homework-1"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "fire>=0.7.0",
+    "numpy>=2.2.1",
+    "termcolor>=2.5.0",
+    "torch>=2.4.1",
+]
