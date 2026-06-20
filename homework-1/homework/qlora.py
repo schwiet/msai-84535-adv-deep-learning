@@ -37,17 +37,17 @@ class QLoRABigNet(torch.nn.Module):
         def __init__(self, channels, lora_dim, group_size):
             super().__init__()
             self.model = torch.nn.Sequential(
-                QLoRALinear(channels, channels, lora_dim),
+                QLoRALinear(channels, channels, lora_dim, group_size=group_size),
                 torch.nn.ReLU(),
-                QLoRALinear(channels, channels, lora_dim),
+                QLoRALinear(channels, channels, lora_dim, group_size=group_size),
                 torch.nn.ReLU(),
-                QLoRALinear(channels, channels, lora_dim),
+                QLoRALinear(channels, channels, lora_dim, group_size=group_size),
             )
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             return self.model(x) + x
 
-    def __init__(self, lora_dim: int = 32, group_size: int = 16):
+    def __init__(self, lora_dim: int = 32, group_size: int = 8):
         super().__init__()
         self.model = torch.nn.Sequential(
             self.Block(BIGNET_DIM, lora_dim, group_size),
