@@ -103,10 +103,14 @@ class Linear4Bit(torch.nn.Module):
             # Load the original weights and remove them from the state_dict (mark them as loaded)
             weight = state_dict[f"{prefix}weight"]  # noqa: F841
             del state_dict[f"{prefix}weight"]
+            # Preserve the device the model is already on (e.g. CUDA) before quantizing
+            device = self.weight_q4.device
             # Quantize the weights and store them in self.weight_q4 and self.weight_norm
             self.weight_q4, self.weight_norm = block_quantize_4bit(
-                weight.view(-1).float()
+                weight.view(-1).float(), group_size=self._group_size
             )
+            self.weight_q4 = self.weight_q4.to(device)
+            self.weight_norm = self.weight_norm.to(device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
