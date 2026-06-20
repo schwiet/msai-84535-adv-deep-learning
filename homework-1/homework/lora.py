@@ -26,7 +26,7 @@ class LoRALinear(HalfLinear):
         """
         super().__init__(in_features, out_features, bias)
 
-        # TODO: Implement LoRA, initialize the layers, and make sure they are trainable
+        # Implement LoRA, initialize the layers, and make sure they are trainable
         # Keep the LoRA layers in float32
         self.lora_a = torch.nn.Linear(
             in_features, lora_dim, bias=False, dtype=torch.float32
