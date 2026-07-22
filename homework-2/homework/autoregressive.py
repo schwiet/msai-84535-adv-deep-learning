@@ -1,6 +1,7 @@
 import abc
 
 import torch
+from torch.nn.modules.transformer import _generate_square_subsequent_mask
 
 
 def load() -> torch.nn.Module:
@@ -35,7 +36,9 @@ class Autoregressive(abc.ABC):
                 torch.nn.ConstantPad1d both work)
         """
 
-    def generate(self, B: int = 1, h: int = 20, w: int = 30, device=None) -> torch.Tensor:  # noqa
+    def generate(
+        self, B: int = 1, h: int = 20, w: int = 30, device=None
+    ) -> torch.Tensor:  # noqa
         """
         Use your generative model to produce B new token images of size (B, h, w) and type (int/long).
         """
@@ -55,10 +58,40 @@ class AutoregressiveModel(torch.nn.Module, Autoregressive):
 
     def __init__(self, d_latent: int = 128, n_tokens: int = 2**10):
         super().__init__()
-        raise NotImplementedError()
+        self.embed = torch.nn.Embedding(num_embeddings=n_tokens, embedding_dim=d_latent)
+        transfLayer = torch.nn.TransformerEncoderLayer(
+            d_model=d_latent, nhead=4, dim_feedforward=512, batch_first=True
+        )
+        self.transf = torch.nn.TransformerEncoder(
+            encoder_layer=transfLayer, num_layers=4
+        )
+        self.register_buffer(
+            "mask", torch.nn.Transformer.generate_square_subsequent_mask(600)
+        )
+        self.score = torch.nn.Linear(d_latent, n_tokens)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        raise NotImplementedError()
+        emb = self.embed(torch.flatten(x, 1))
+        padding = torch.zeros_like(emb[:, :1, :])
+        shifted = torch.cat([padding, emb[:, :-1, :]], dim=1)
 
-    def generate(self, B: int = 1, h: int = 30, w: int = 20, device=None) -> torch.Tensor:  # noqa
-        raise NotImplementedError()
+        return torch.unflatten(
+            self.score(self.transf(shifted, mask=self.mask)),
+            1,
+            (x.shape[1], x.shape[2]),
+        ), {}
+
+    def generate(
+        self, B: int = 1, h: int = 30, w: int = 20, device=None
+    ) -> torch.Tensor:  # noqa
+        with torch.no_grad():
+            canvas = torch.zeros((B, h, w), dtype=torch.long, device=device)
+            # Loop over grid positions and write the sampled tokens into the canvas at (i, j)
+            for i in range(h):
+                for j in range(w):
+                    pred, _ = self.forward(canvas)
+                    logits = pred[:, i, j, :]
+                    probs = torch.nn.functional.softmax(logits, dim=-1)
+                    sampled = torch.multinomial(probs, num_samples=1)
+                    canvas[:, i, j] = sampled[:, 0]
+            return canvas

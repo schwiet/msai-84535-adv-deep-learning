@@ -120,8 +120,13 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
             super().__init__()
             self.patch = PatchifyLinear(patch_size, latent_dim)
             # learn relationship to neighboring patches
-            self.mix = torch.nn.Conv2d(latent_dim, latent_dim, 3, 1, 1)
-            self.gelu = torch.nn.GELU()
+            self.mix = torch.nn.Sequential(
+                torch.nn.Conv2d(latent_dim, latent_dim, 3, 1, 1),
+                # introduce nonlinearity between each
+                torch.nn.GELU(),
+                torch.nn.Conv2d(latent_dim, latent_dim, 3, 1, 1),
+                torch.nn.GELU(),
+            )
             # project to bottleneck space
             self.project = torch.nn.Conv2d(latent_dim, bottleneck, 1)
 
@@ -129,28 +134,33 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
             patches = self.patch(x)
             # reorder tensor and pass to next layer
             mixed = self.mix(hwc_to_chw(patches))
-            # introduce nonlinearity
-            nonlin = self.gelu(mixed)
             # project to bottleneck dimensions and reorder result to H W C
-            return chw_to_hwc(self.project(nonlin))
+            return chw_to_hwc(self.project(mixed))
 
     class PatchDecoder(torch.nn.Module):
         def __init__(self, patch_size: int, latent_dim: int, bottleneck: int):
             super().__init__()
             self.project = torch.nn.Conv2d(bottleneck, latent_dim, 1)
             self.unpatch = UnpatchifyLinear(patch_size, latent_dim)
-            self.gelu = torch.nn.GELU()
+            self.mix = torch.nn.Sequential(
+                torch.nn.GELU(),
+                torch.nn.Conv2d(latent_dim, latent_dim, 3, 1, 1),
+                torch.nn.GELU(),
+                torch.nn.Conv2d(latent_dim, latent_dim, 3, 1, 1),
+                torch.nn.GELU(),
+            )
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             projected = self.project(hwc_to_chw(x))
-            nonlin = self.gelu(projected)
-            return self.unpatch(chw_to_hwc(nonlin))
+            mixed = self.mix(projected)
+            return self.unpatch(chw_to_hwc(mixed))
 
     def __init__(
         self, patch_size: int = 25, latent_dim: int = 128, bottleneck: int = 128
     ):
         super().__init__()
-        raise NotImplementedError()
+        self.encoder = self.PatchEncoder(patch_size, latent_dim, bottleneck)
+        self.decoder = self.PatchDecoder(patch_size, latent_dim, bottleneck)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         """
@@ -158,10 +168,10 @@ class PatchAutoEncoder(torch.nn.Module, PatchAutoEncoderBase):
         minimize (or even just visualize).
         You can return an empty dictionary if you don't have any additional terms.
         """
-        raise NotImplementedError()
+        return self.decode(self.encode(x)), {}
 
     def encode(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
+        return self.encoder(x)
 
     def decode(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError()
+        return self.decoder(x)

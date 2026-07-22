@@ -9,6 +9,7 @@ dependencies = [
     "lightning>=2.5.0",
     "numpy>=2.2.1",
     "pillow>=11.1.0",
+    "tensorboard>=2.21.0",
     "torch>=2.4.1",
     "tqdm>=4.66.0",
 ]

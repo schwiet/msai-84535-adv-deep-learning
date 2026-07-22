@@ -1,1 +1,9 @@
 .DS_Store
+__pycache__
+sds4635.zip
+
+homework-2/generated_images
+homework-2/gen_*.png
+homework-2/checkpoints
+homework-2/data
+homework-2/logs
