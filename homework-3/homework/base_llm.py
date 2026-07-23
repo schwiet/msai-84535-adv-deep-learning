@@ -146,10 +146,10 @@ class BaseLLM:
             gen[:, len(batch["input_ids"][0]) :], skip_special_tokens=True
         )
 
-        for i, p in enumerate(prompts):
-            ans = self.parse_answer(res[i])
-            if ans != ans:
-                print(f"prompt:{p}\nanswer: {res[i]}\n")
+        # for i, p in enumerate(prompts):
+        #     ans = self.parse_answer(res[i])
+        #     if ans != ans:
+        #         print(f"prompt:{p}\nanswer: {res[i]}\n")
         return res
 
     def answer(self, *questions) -> list[float]:
