@@ -11,7 +11,7 @@ class CoTModel(BaseLLM):
         messages = [
             {
                 "role": "system",
-                "content": "You calculate unit conversion upon request. Be concise. Show a brief calculation, then give the final answer as <answer>NUMBER</answer> with a bare number and no units inside the tags",
+                "content": "You calculate unit conversion upon request. Be concise. Show a brief calculation. Then end with <answer>N</answer>. N must be a bare number — never include units inside the tags.",
             },
             {"role": "user", "content": "how many feet are in 3 meters?"},
             {
@@ -26,7 +26,7 @@ class CoTModel(BaseLLM):
             {"role": "user", "content": "can you translate 9 kg to pounds"},
             {
                 "role": "assistant",
-                "content": "1 pound = 0.454, so 9/0.454 = <answer>19.82</answer>",
+                "content": "1 pound = 0.454 kilogram, so 9/0.454 = <answer>19.82</answer>",
             },
             {"role": "user", "content": "bytes in 2 megabytes"},
             {

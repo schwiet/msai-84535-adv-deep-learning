@@ -108,6 +108,7 @@ class BaseLLM:
         # Depending on your GPU batched generation will use a lot of memory.
         # If you run out of memory, try to reduce the micro_batch_size.
         micro_batch_size = 32
+        # micro_batch_size = 16
         if len(prompts) > micro_batch_size:
             return [
                 r
@@ -122,11 +123,14 @@ class BaseLLM:
                 )
             ]
 
-        sample_kwargs = (
+        sample_kwargs: dict[str, float | bool] = (
             {"do_sample": True, "temperature": temperature}
             if temperature > 0
             else {"do_sample": False}
         )
+
+        if num_return_sequences is not None:
+            sample_kwargs["num_return_sequences"] = num_return_sequences
 
         # ensure that all prompts in the batch are "right-aligned"
         self.tokenizer.padding_side = "left"
@@ -150,7 +154,15 @@ class BaseLLM:
         #     ans = self.parse_answer(res[i])
         #     if ans != ans:
         #         print(f"prompt:{p}\nanswer: {res[i]}\n")
-        return res
+        #
+        if num_return_sequences is None:
+            return res
+
+        chunks = []
+        for i in range(0, len(res), num_return_sequences):
+            chunks.append(res[i : i + num_return_sequences])
+
+        return chunks
 
     def answer(self, *questions) -> list[float]:
         """
