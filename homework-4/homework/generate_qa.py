@@ -256,19 +256,85 @@ def generate_qa_pairs(
     Returns:
         List of dictionaries, each containing a question and answer
     """
-    # 1. Ego car question
-    # What kart is the ego car?
-
-    # 2. Total karts question
-    # How many karts are there in the scenario?
+    qa = []
+    track = extract_track_info(info_path)
+    karts = extract_kart_objects(info_path, view_index, img_width, img_height)
+    _info_path = Path(info_path)
+    base_name = _info_path.stem.replace("_info", "")
+    image_file = f"{_info_path.parent.name}/{base_name}_{view_index:02d}_im.jpg"
 
     # 3. Track information questions
     # What track is this?
+    qa.append({
+        "question": "What track is this?",
+        "answer": track,
+        "image_file": image_file
+    })
+
+    if len(karts) == 0:
+        return qa
+
+    ego = next(k for k in karts if k["is_center_kart"])
+    ego_name = ego["kart_name"]
+
+    # 1. Ego car question
+    # What kart is the ego car?
+    qa.append({
+        "question": "What kart is the ego car?",
+        "answer": ego_name,
+        "image_file": image_file
+    })
+
+    # 2. Total karts question
+    # How many karts are there in the scenario?
+    qa.append({
+        "question": "How many karts are there in the scenario?",
+        "answer": str(len(karts)),
+        "image_file": image_file
+    })
 
     # 4. Relative position questions for each kart
     # Is {kart_name} to the left or right of the ego car?
     # Is {kart_name} in front of or behind the ego car?
     # Where is {kart_name} relative to the ego car?
+    karts_left = 0
+    karts_right = 0
+    karts_front = 0
+    karts_back = 0
+    for k in karts:
+        kart_name = k["kart_name"]
+        center = k["center"]
+        if kart_name != ego_name:
+            horiz = "left" if center[0] < ego["center"][0] else "right"
+            vert ="front" if center[1] < ego["center"][1] else "back"
+
+            # update tallies
+            if horiz == "left":
+                karts_left += 1
+            else:
+                karts_right += 1
+            if vert == "front":
+                karts_front += 1
+            else:
+                karts_back += 1
+
+            qa.append({
+                "question": f"Is {kart_name} to the left or right of the ego car?",
+                "answer": horiz,
+                "image_file": image_file
+            })
+            qa.append({
+                "question": f"Is {kart_name} in front of or behind the ego car?",
+                "answer": vert,
+                "image_file": image_file
+            })
+            qa.append({
+                "question": f"Where is {kart_name} relative to the ego car?",
+                "answer": f"{vert} and {horiz}",
+                "image_file": image_file
+            })
+
+
 
     # 5. Counting questions
     # How many karts are to the left of the ego car?
@@ -276,7 +342,32 @@ def generate_qa_pairs(
     # How many karts are in front of the ego car?
     # How many karts are behind the ego car?
 
-    raise NotImplementedError("Not implemented")
+    if karts_left > 0:
+        qa.append({
+            "question": "How many karts are to the left of the ego car?",
+            "answer": str(karts_left),
+            "image_file": image_file
+        })
+    if karts_right > 0:
+        qa.append({
+            "question": "How many karts are to the right of the ego car?",
+            "answer": str(karts_right),
+            "image_file": image_file
+        })
+    if karts_front > 0:
+        qa.append({
+            "question": "How many karts are in front of the ego car?",
+            "answer": str(karts_front),
+            "image_file": image_file
+        })
+    if karts_back > 0:
+        qa.append({
+            "question": "How many karts are behind the ego car?",
+            "answer": str(karts_back),
+            "image_file": image_file
+        })
+
+    return qa
 
 
 def check_qa_pairs(info_file: str, view_index: int):
