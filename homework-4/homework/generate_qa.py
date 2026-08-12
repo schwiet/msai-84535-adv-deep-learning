@@ -1,3 +1,4 @@
+import glob
 import json
 from pathlib import Path
 
@@ -29,6 +30,8 @@ COLORS = {
 # Original image dimensions for the bounding box coordinates
 ORIGINAL_WIDTH = 600
 ORIGINAL_HEIGHT = 400
+
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 
 def extract_frame_info(image_path: str) -> tuple[int, int]:
@@ -191,19 +194,14 @@ def extract_kart_objects(
         sy2 = y2 * (img_height / ORIGINAL_HEIGHT)
 
         # skip detections that are outside of the boundaries
-        if (
-            sx1 >= img_width
-            or sy1 >= img_height
-            or sx2 <= 0
-            or sy2 <= 0
-        ):
+        if sx1 >= img_width or sy1 >= img_height or sx2 <= 0 or sy2 <= 0:
             continue
 
         width = sx2 - sx1
         height = sy2 - sy1
 
         # skip detections that are not visible
-        if width <= min_box_size or height <= min_box_size:
+        if width < min_box_size or height < min_box_size:
             continue
 
         center_x = sx1 + width / 2
@@ -219,7 +217,10 @@ def extract_kart_objects(
         result.append(kart)
 
     if result:
-        ego = min(result, key=lambda k: (k["center"][0] - cx) ** 2 + (k["center"][1] - cy) ** 2)
+        ego = min(
+            result,
+            key=lambda k: (k["center"][0] - cx) ** 2 + (k["center"][1] - cy) ** 2,
+        )
         ego["is_center_kart"] = True
 
     return result
@@ -258,18 +259,18 @@ def generate_qa_pairs(
     """
     qa = []
     track = extract_track_info(info_path)
-    karts = extract_kart_objects(info_path, view_index, img_width, img_height)
+    karts = extract_kart_objects(
+        info_path, view_index, img_width, img_height, min_box_size=5
+    )
     _info_path = Path(info_path)
     base_name = _info_path.stem.replace("_info", "")
     image_file = f"{_info_path.parent.name}/{base_name}_{view_index:02d}_im.jpg"
 
     # 3. Track information questions
     # What track is this?
-    qa.append({
-        "question": "What track is this?",
-        "answer": track,
-        "image_file": image_file
-    })
+    qa.append(
+        {"question": "What track is this?", "answer": track, "image_file": image_file}
+    )
 
     if len(karts) == 0:
         return qa
@@ -279,19 +280,23 @@ def generate_qa_pairs(
 
     # 1. Ego car question
     # What kart is the ego car?
-    qa.append({
-        "question": "What kart is the ego car?",
-        "answer": ego_name,
-        "image_file": image_file
-    })
+    qa.append(
+        {
+            "question": "What kart is the ego car?",
+            "answer": ego_name,
+            "image_file": image_file,
+        }
+    )
 
     # 2. Total karts question
     # How many karts are there in the scenario?
-    qa.append({
-        "question": "How many karts are there in the scenario?",
-        "answer": str(len(karts)),
-        "image_file": image_file
-    })
+    qa.append(
+        {
+            "question": "How many karts are there in the scenario?",
+            "answer": str(len(karts)),
+            "image_file": image_file,
+        }
+    )
 
     # 4. Relative position questions for each kart
     # Is {kart_name} to the left or right of the ego car?
@@ -306,7 +311,7 @@ def generate_qa_pairs(
         center = k["center"]
         if kart_name != ego_name:
             horiz = "left" if center[0] < ego["center"][0] else "right"
-            vert ="front" if center[1] < ego["center"][1] else "back"
+            vert = "front" if center[1] < ego["center"][1] else "back"
 
             # update tallies
             if horiz == "left":
@@ -318,23 +323,27 @@ def generate_qa_pairs(
             else:
                 karts_back += 1
 
-            qa.append({
-                "question": f"Is {kart_name} to the left or right of the ego car?",
-                "answer": horiz,
-                "image_file": image_file
-            })
-            qa.append({
-                "question": f"Is {kart_name} in front of or behind the ego car?",
-                "answer": vert,
-                "image_file": image_file
-            })
-            qa.append({
-                "question": f"Where is {kart_name} relative to the ego car?",
-                "answer": f"{vert} and {horiz}",
-                "image_file": image_file
-            })
-
-
+            qa.append(
+                {
+                    "question": f"Is {kart_name} to the left or right of the ego car?",
+                    "answer": horiz,
+                    "image_file": image_file,
+                }
+            )
+            qa.append(
+                {
+                    "question": f"Is {kart_name} in front of or behind the ego car?",
+                    "answer": vert,
+                    "image_file": image_file,
+                }
+            )
+            qa.append(
+                {
+                    "question": f"Where is {kart_name} relative to the ego car?",
+                    "answer": f"{vert} and {horiz}",
+                    "image_file": image_file,
+                }
+            )
 
     # 5. Counting questions
     # How many karts are to the left of the ego car?
@@ -343,31 +352,53 @@ def generate_qa_pairs(
     # How many karts are behind the ego car?
 
     if karts_left > 0:
-        qa.append({
-            "question": "How many karts are to the left of the ego car?",
-            "answer": str(karts_left),
-            "image_file": image_file
-        })
+        qa.append(
+            {
+                "question": "How many karts are to the left of the ego car?",
+                "answer": str(karts_left),
+                "image_file": image_file,
+            }
+        )
     if karts_right > 0:
-        qa.append({
-            "question": "How many karts are to the right of the ego car?",
-            "answer": str(karts_right),
-            "image_file": image_file
-        })
+        qa.append(
+            {
+                "question": "How many karts are to the right of the ego car?",
+                "answer": str(karts_right),
+                "image_file": image_file,
+            }
+        )
     if karts_front > 0:
-        qa.append({
-            "question": "How many karts are in front of the ego car?",
-            "answer": str(karts_front),
-            "image_file": image_file
-        })
+        qa.append(
+            {
+                "question": "How many karts are in front of the ego car?",
+                "answer": str(karts_front),
+                "image_file": image_file,
+            }
+        )
     if karts_back > 0:
-        qa.append({
-            "question": "How many karts are behind the ego car?",
-            "answer": str(karts_back),
-            "image_file": image_file
-        })
+        qa.append(
+            {
+                "question": "How many karts are behind the ego car?",
+                "answer": str(karts_back),
+                "image_file": image_file,
+            }
+        )
 
     return qa
+
+
+def expand_dataset():
+    output = Path(DATA_DIR, "train", "train_qa_pairs.json")
+    files = sorted((DATA_DIR / "train").glob("*_info.json"))
+    rows = []
+    for info_path in files:
+        for view in range(10):
+            rows.extend(generate_qa_pairs(str(info_path), view))
+
+    with open(output, "w") as f:
+        json.dump(rows, f, indent=2)
+
+    print(f"wrote {len(rows)} QA pairs to {output}")
 
 
 def check_qa_pairs(info_file: str, view_index: int):
@@ -414,7 +445,7 @@ You probably need to add additional commands to Fire below.
 
 
 def main():
-    fire.Fire({"check": check_qa_pairs})
+    fire.Fire({"check": check_qa_pairs, "generate": expand_dataset})
 
 
 if __name__ == "__main__":
