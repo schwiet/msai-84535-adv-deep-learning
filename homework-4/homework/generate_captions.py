@@ -1,28 +1,83 @@
+import json
 from pathlib import Path
 
 import fire
 from matplotlib import pyplot as plt
 
-from .generate_qa import draw_detections, extract_frame_info
+from .generate_qa import (
+    draw_detections,
+    extract_frame_info,
+    extract_kart_objects,
+    extract_track_info,
+    image_file_for,
+)
+
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 
-def generate_caption(info_path: str, view_index: int, img_width: int = 150, img_height: int = 100) -> list:
+def generate_caption(
+    info_path: str, view_index: int, img_width: int = 150, img_height: int = 100
+) -> list:
     """
     Generate caption for a specific view.
     """
+    caps = []
+    track = extract_track_info(info_path)
+    karts = extract_kart_objects(info_path, view_index, img_width, img_height)
+
+    img_file = image_file_for(info_path, view_index)
+    caps.append({"caption": f"The track is {track}.", "image_file": img_file})
+
+    if len(karts) == 0:
+        return caps
+
+    ego = next(k for k in karts if k["is_center_kart"])
+    ego_name = ego["kart_name"]
     # 1. Ego car
-    # {kart_name} is the ego car.
-
-    # 2. Counting
-    # There are {num_karts} karts in the scenario.
-
-    # 3. Track name
-    # The track is {track_name}.
+    caps.append({"caption": f"{ego_name} is the ego car.", "image_file": img_file})
+    caps.append(
+        {
+            "caption": f"There are {len(karts)} karts in the scene.",
+            "image_file": img_file,
+        }
+    )
 
     # 4. Relative position
     # {kart_name} is {position} of the ego car.
+    for k in karts:
+        kart_name = k["kart_name"]
+        if kart_name != ego_name:
+            center = k["center"]
+            horiz = "left" if center[0] < ego["center"][0] else "right"
+            vert = "in front of" if center[1] < ego["center"][1] else "behind"
+            caps.append(
+                {
+                    "caption": f"{kart_name} is {horiz} of the ego car.",
+                    "image_file": img_file,
+                }
+            )
+            caps.append(
+                {
+                    "caption": f"{kart_name} is {vert} the ego car.",
+                    "image_file": img_file,
+                }
+            )
 
-    raise NotImplementedError("Not implemented")
+    return caps
+
+
+def expand_dataset():
+    output = Path(DATA_DIR, "train", "train_captions.json")
+    files = sorted((DATA_DIR / "train").glob("*_info.json"))
+    rows = []
+    for info_path in files:
+        for view in range(10):
+            rows.extend(generate_caption(str(info_path), view))
+
+    with open(output, "w") as f:
+        json.dump(rows, f, indent=2)
+
+    print(f"wrote {len(rows)} captions {output}")
 
 
 def check_caption(info_file: str, view_index: int):
@@ -56,7 +111,7 @@ You probably need to add additional commands to Fire below.
 
 
 def main():
-    fire.Fire({"check": check_caption})
+    fire.Fire({"check": check_caption, "generate": expand_dataset})
 
 
 if __name__ == "__main__":

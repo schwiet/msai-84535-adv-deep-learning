@@ -262,9 +262,7 @@ def generate_qa_pairs(
     karts = extract_kart_objects(
         info_path, view_index, img_width, img_height, min_box_size=5
     )
-    _info_path = Path(info_path)
-    base_name = _info_path.stem.replace("_info", "")
-    image_file = f"{_info_path.parent.name}/{base_name}_{view_index:02d}_im.jpg"
+    image_file = image_file_for(info_path, view_index)
 
     # 3. Track information questions
     # What track is this?
@@ -435,6 +433,10 @@ def check_qa_pairs(info_file: str, view_index: int):
         print(f"A: {qa['answer']}")
         print("-" * 50)
 
+def image_file_for(info_path, view_index) -> str:
+    _info_path = Path(info_path)
+    base_name = _info_path.stem.replace("_info", "")
+    return f"{_info_path.parent.name}/{base_name}_{view_index:02d}_im.jpg"
 
 """
 Usage Example: Visualize QA pairs for a specific file and view:
