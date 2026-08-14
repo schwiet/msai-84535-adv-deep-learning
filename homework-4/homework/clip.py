@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,13 @@ from .data import CaptionDataset, MultiChoiceQADataset
 
 processor = AutoProcessor.from_pretrained("HuggingFaceTB/SmolVLM-256M-Instruct")
 
-device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+device = (
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
+)
 
 
 def load(model_name: str = "clip_model"):
@@ -39,7 +46,9 @@ def load(model_name: str = "clip_model"):
     return clip
 
 
-def clip_data_collator(features: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
+def clip_data_collator(
+    features: list[dict[str, torch.Tensor]],
+) -> dict[str, torch.Tensor]:
     """
     Custom data collator for CLIP training.
     """
@@ -47,11 +56,27 @@ def clip_data_collator(features: list[dict[str, torch.Tensor]]) -> dict[str, tor
     max_length = max(f["input_ids"].shape[0] for f in features)
 
     def pad_tensor(tensor, pad_value):
-        return torch.cat([tensor, torch.full((max_length - tensor.shape[0],), pad_value, dtype=tensor.dtype)])
+        return torch.cat(
+            [
+                tensor,
+                torch.full(
+                    (max_length - tensor.shape[0],), pad_value, dtype=tensor.dtype
+                ),
+            ]
+        )
 
-    input_ids = torch.stack([pad_tensor(f["input_ids"], pad_value=processor.tokenizer.eos_token_id) for f in features])
-    attention_mask = torch.stack([pad_tensor(f["attention_mask"], pad_value=0) for f in features])
-    pixel_values = torch.stack([f["pixel_values"] for f in features])  # assume all are same shape
+    input_ids = torch.stack(
+        [
+            pad_tensor(f["input_ids"], pad_value=processor.tokenizer.eos_token_id)
+            for f in features
+        ]
+    )
+    attention_mask = torch.stack(
+        [pad_tensor(f["attention_mask"], pad_value=0) for f in features]
+    )
+    pixel_values = torch.stack(
+        [f["pixel_values"] for f in features]
+    )  # assume all are same shape
     labels = torch.stack([pad_tensor(f["labels"], pad_value=-100) for f in features])
 
     return {
@@ -83,7 +108,9 @@ class CaptionDatasetForTraining(Dataset):
         image = Image.open(item["image_path"]).convert("RGB")
         pixel_values = self.image_processor(image)
         text = item["caption"] + self.processor.tokenizer.eos_token
-        text_inputs = self.processor(text=text, return_tensors="pt", padding=True, truncation=True)
+        text_inputs = self.processor(
+            text=text, return_tensors="pt", padding=True, truncation=True
+        )
         input_ids = text_inputs["input_ids"].squeeze(0).long()
         attention_mask = text_inputs["attention_mask"].squeeze(0)
         return {
@@ -96,13 +123,22 @@ class CaptionDatasetForTraining(Dataset):
 
 class CLIP(nn.Module):
     def __init__(
-        self, vision_encoder: nn.Module, text_encoder: nn.Module, proj_dim: int = 64, temperature: float = 0.07
+        self,
+        vision_encoder: nn.Module,
+        text_encoder: nn.Module,
+        proj_dim: int = 64,
+        temperature: float = 0.07,
     ):
         super().__init__()
         self.vision_encoder = vision_encoder
         self.text_encoder = text_encoder
-        # TODO: implement the rest components
-        raise NotImplementedError("Not implemented")
+        self.vision_projection = nn.Linear(
+            in_features=vision_encoder.config.hidden_size, out_features=proj_dim
+        )
+        self.text_projection = nn.Linear(
+            in_features=text_encoder.config.hidden_size, out_features=proj_dim
+        )
+        self.logit_scale = nn.Parameter(torch.tensor(math.log(1 / temperature)))
 
     def encode_image(self, image: torch.Tensor) -> torch.Tensor:
         return self.vision_encoder(image)
@@ -119,14 +155,18 @@ class CLIP(nn.Module):
                 continue
             additional_state_dict[name] = param.data
 
-        torch.save(additional_state_dict, Path(save_directory) / "additional_weights.pt")
+        torch.save(
+            additional_state_dict, Path(save_directory) / "additional_weights.pt"
+        )
 
     def load_pretrained(self, load_directory: str, **kwargs):
         """Customize load method, load projection additional parameters"""
 
         additional_weights_path = Path(load_directory) / "additional_weights.pt"
         if additional_weights_path.exists():
-            additional_state_dict = torch.load(additional_weights_path, map_location="cpu")
+            additional_state_dict = torch.load(
+                additional_weights_path, map_location="cpu"
+            )
 
             for name, param in self.named_parameters():
                 if "vision_encoder." in name or "text_encoder." in name:
@@ -158,7 +198,9 @@ class CLIP(nn.Module):
             output.requires_grad_(True)
 
         self.vision_encoder.embeddings.register_forward_hook(make_inputs_require_grads)
-        self.text_encoder.get_input_embeddings().register_forward_hook(make_inputs_require_grads)
+        self.text_encoder.get_input_embeddings().register_forward_hook(
+            make_inputs_require_grads
+        )
 
     def forward(
         self,
@@ -180,7 +222,21 @@ class CLIP(nn.Module):
         Returns:
             TODO: think about the what values should be returned
         """
-        raise NotImplementedError("Not implemented")
+        # for training on MPS
+        pixel_values = pixel_values.to(next(self.vision_encoder.parameters()).dtype)
+
+        last_hidden_state = self.vision_encoder(pixel_values).last_hidden_state
+        pooled = last_hidden_state.mean(dim=1)
+        vis_proj = self.vision_projection(pooled)
+        v = nn.functional.normalize(vis_proj, dim=-1)
+
+        h = self.text_encoder(input_ids=input_ids, attention_mask=attention_mask).last_hidden_state
+        m = attention_mask.unsqueeze(-1).to(h.dtype)
+        pooled = (h * m).sum(dim=1) / m.sum(dim=1).clamp(min=1)
+        t = self.text_projection(pooled)
+        t = nn.functional.normalize(t, dim=-1)
+
+        return v, t, self.logit_scale.exp()
 
 
 def compute_clip_loss(
@@ -199,7 +255,12 @@ def compute_clip_loss(
     Returns:
         The loss for the CLIP model.
     """
-    raise NotImplementedError("Not implemented")
+    v, t, scale = outputs
+    logits = (scale * v @ t.T).float()
+    labels = torch.arange(logits.shape[0], device=logits.device)
+    loss = (nn.functional.cross_entropy(logits, labels)
+            + nn.functional.cross_entropy(logits.T, labels)) / 2
+    return loss
 
 
 def get_target_modules_for_lora(model: nn.Module) -> list[str]:
